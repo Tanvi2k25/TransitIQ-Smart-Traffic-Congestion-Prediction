@@ -1,0 +1,17 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"route": "Bandra-Juhu"},
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [72.8296, 19.0596],
+          [72.8340, 19.0728],
+          [72.8400, 19.0850]
+        ]
+      }
+    }
+  ]
+}
