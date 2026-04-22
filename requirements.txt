@@ -1,0 +1,13 @@
+streamlit
+flask
+requests
+pandas
+numpy
+scikit-learn
+joblib
+plotly
+folium
+streamlit-folium
+geopy
+polyline
+streamlit-autorefresh
