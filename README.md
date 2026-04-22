@@ -50,8 +50,8 @@ APIs Used
 🔍 How It Works
 1. User selects a location (map or search)
 2. Backend fetches:
-  - Weather data (Open-Meteo)
-  - Traffic data (TomTom)
+    - Weather data (Open-Meteo)
+    - Traffic data (TomTom)
 3. Features are generated (time + weather)
 4. ML model predicts traffic volume
 5. Result is displayed on dashboard
@@ -69,20 +69,24 @@ APIs Used
 
 🚀 Installation & Setup
 1️⃣ Clone the repository
-git clone <your-repo-link>
+```bash
+git clone https://github.com/Tanvi2k25/TransitIQ-Smart-Traffic-Congestion-Prediction.git
 cd project
-
+```
 2️⃣ Install dependencies
+```bash
 pip install -r requirements.txt
-
+```
 3️⃣ Run Backend (Flask)
+```bash
 cd api
 python server.py
-
+```
 4️⃣ Run Frontend (Streamlit)
+```bash
 cd ..
 streamlit run app.py
-
+```
 📍 Usage
 - Search or select a location on the map
 - View real-time traffic and weather
