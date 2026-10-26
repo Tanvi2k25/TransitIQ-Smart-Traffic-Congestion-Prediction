@@ -129,15 +129,17 @@ def get_traffic(lat, lon):
 # ---------------- FEATURES ----------------
 def create_features(weather, now):
 
-    temp = weather.get("temperature", 28)
-    humidity = weather.get("humidity", 60)
-    rain = weather.get("rain", 0)
-    cloud = weather.get("cloudcover", 40)
-    wind = weather.get("windspeed", 10)
+    # ---------------- BASIC WEATHER ----------------
+    temp = float(weather.get("temperature", 28) or 28)
+    humidity = float(weather.get("humidity", 60) or 60)
+    rain = float(weather.get("rain", 0) or 0)
+    cloud = float(weather.get("cloudcover", 40) or 40)
+    wind = float(weather.get("windspeed", 10) or 10)
 
-    # 🔥 Basic combined features (Original 12)
+    # ---------------- BASIC COMBINED FEATURES ----------------
     temp_humidity = temp * humidity
     rain_intensity = rain * cloud
+
     weather_severity = (
         temp * 0.3 +
         humidity * 0.2 +
@@ -146,13 +148,76 @@ def create_features(weather, now):
         rain * 0.2
     )
 
-    return pd.DataFrame([{
-        # Time features
+    # ---------------- ADVANCED WEATHER FEATURES ----------------
+
+    # Dew Point
+    dew_point = temp - ((100 - humidity) / 5.0)
+
+    # Heat Index
+    heat_index = 0.5 * (
+        temp +
+        61.0 +
+        ((temp - 68.0) * 1.2) +
+        (humidity * 0.094)
+    )
+
+    # Wind Chill
+    wind_chill = (
+        13.12 +
+        (0.6215 * temp) -
+        (11.37 * (wind ** 0.16)) +
+        (0.3965 * temp * (wind ** 0.16))
+    )
+
+    # Absolute Humidity
+    abs_humidity = (
+        6.112 *
+        np.exp((17.67 * temp) / (temp + 243.5)) *
+        humidity / 100
+    ) / 100
+
+    # Rain-Humidity Ratio
+    rain_humidity_ratio = rain / (humidity + 1)
+
+    # Cloud-Wind Interaction
+    cloud_wind_interaction = cloud * wind
+
+    # Humidity Comfort
+    humidity_comfort = abs(humidity - 45)
+
+    # Temperature / Weather Categories
+    is_hot = 1 if temp > 30 else 0
+    is_cold = 1 if temp < 15 else 0
+    is_rain = 1 if rain > 0 else 0
+
+    # Weather Stability
+    weather_stability = (
+        abs(wind) +
+        abs(cloud - 50) / 100
+    )
+
+    # Cloud Categories
+    high_clouds = 1 if cloud > 70 else 0
+    low_clouds = 1 if cloud < 30 else 0
+
+    # Discomfort Index
+    discomfort_index = (
+        0.4 * (temp + heat_index) / 2
+    ) + (0.6 * humidity) - 20
+
+    # ---------------- SAME CLIPPING AS TRAINING ----------------
+
+    heat_index = np.clip(heat_index, 20, 60)
+    wind_chill = np.clip(wind_chill, -50, 50)
+    discomfort_index = np.clip(discomfort_index, 0, 100)
+
+    # ---------------- CREATE DATAFRAME ----------------
+
+    X = pd.DataFrame([{
         "hour": now.hour,
         "day": now.weekday(),
         "month": now.month,
 
-        # Basic weather
         "temp": temp,
         "rain_1h": rain,
         "clouds_all": cloud,
@@ -160,12 +225,45 @@ def create_features(weather, now):
         "wind": wind,
         "is_holiday": 0,
 
-        # Combined weather features
         "temp_humidity": temp_humidity,
         "rain_intensity": rain_intensity,
         "weather_severity": weather_severity,
+
+        "dew_point": dew_point,
+        "heat_index": heat_index,
+        "wind_chill": wind_chill,
+        "abs_humidity": abs_humidity,
+
+        "rain_humidity_ratio": rain_humidity_ratio,
+        "cloud_wind_interaction": cloud_wind_interaction,
+        "humidity_comfort": humidity_comfort,
+
+        "is_hot": is_hot,
+        "is_cold": is_cold,
+        "is_rain": is_rain,
+
+        "weather_stability": weather_stability,
+        "high_clouds": high_clouds,
+        "low_clouds": low_clouds,
+
+        "discomfort_index": discomfort_index
     }])
 
+    # Ensure exact feature order used during training
+    X = X[[
+        "hour", "day", "month",
+        "temp", "rain_1h", "clouds_all",
+        "humidity", "wind", "is_holiday",
+        "temp_humidity", "rain_intensity", "weather_severity",
+        "dew_point", "heat_index", "wind_chill", "abs_humidity",
+        "rain_humidity_ratio", "cloud_wind_interaction",
+        "humidity_comfort",
+        "is_hot", "is_cold", "is_rain",
+        "weather_stability", "high_clouds",
+        "low_clouds", "discomfort_index"
+    ]]
+
+    return X
 # ---------------- HISTORY SUPPORT ----------------
 def classify_traffic(actual):
     if actual < 2000:
@@ -404,9 +502,15 @@ def routes():
 def predict_volume(weather, now):
     try:
         X = create_features(weather, now)
-        return float(model.predict(X)[0])
+
+        prediction = float(model.predict(X)[0])
+
+        print(f"Predicted traffic volume: {prediction:.2f}")
+
+        return prediction
+
     except Exception as e:
-        print(f"Prediction error: {e}")
+        print(f"❌ Prediction error: {e}")
         return 2000
 
 # ---------------- MAIN API ----------------

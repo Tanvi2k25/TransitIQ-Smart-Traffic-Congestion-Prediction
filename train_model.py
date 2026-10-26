@@ -123,15 +123,31 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 # ---------------- MODELS ----------------
 models = {
     "Linear Regression": LinearRegression(),
-    "Random Forest": RandomForestRegressor(n_estimators=150)
+    "Random Forest": RandomForestRegressor(
+    n_estimators=50,
+    max_depth=15,
+    min_samples_leaf=2,
+    n_jobs=-1,
+    random_state=42
+)
 }
 
 results = []
 best_model = None
 best_r2 = -999
 
+import time
+
 for name, m in models.items():
+    print(f"\nTraining {name}...", flush=True)
+
+    start = time.time()
+
     m.fit(X_train, y_train)
+
+    elapsed = time.time() - start
+
+    print(f"{name} training completed in {elapsed:.2f} seconds.", flush=True)
     pred = m.predict(X_test)
 
     mae = mean_absolute_error(y_test, pred)
