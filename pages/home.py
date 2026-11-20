@@ -78,13 +78,26 @@ if st.button("Set Location"):
 # ---------------- DATA FETCHING ----------------
 def get_data(lat, lon):
     try:
-        return requests.get(f"{BACKEND}/predict", params={"lat": lat, "lon": lon}, timeout=5).json()
-    except: return None
+        response = requests.get(f"{BACKEND}/predict", params={"lat": lat, "lon": lon}, timeout=(2, 6))
+        response.raise_for_status()
+        return response.json(), None
+    except requests.RequestException as exc:
+        return None, str(exc)
 
-data = get_data(st.session_state.lat, st.session_state.lon)
+data, backend_error = get_data(st.session_state.lat, st.session_state.lon)
 
 if not data:
-    st.error("Cannot connect to Traffic Server. Please ensure server.py is running.")
+    # Check the health endpoint separately so a failing data provider is not
+    # reported as a stopped Flask server.
+    try:
+        health = requests.get(BACKEND, timeout=(2, 3))
+        if health.ok:
+            st.warning("The backend server is running, but the prediction request failed. Check the backend log and try again.")
+        else:
+            st.error(f"The backend responded with HTTP {health.status_code}.")
+    except requests.RequestException:
+        st.error("Cannot reach the backend server. Start it with `python api/server.py`.")
+    st.caption(f"Request detail: {backend_error}")
     st.stop()
 
 # ---------------- CALCULATIONS ----------------
@@ -94,7 +107,8 @@ speed = data.get("speed", 30)
 
 # Create a "Mobility Score" (Area-wise Health)
 # Lower volume + Higher speed = Better score
-vol_factor = max(0, 100 - (data.get("actual_volume", 0) / 100))
+estimated_volume = data.get("estimated_volume", data.get("actual_volume", 0))
+vol_factor = max(0, 100 - (estimated_volume / 100))
 speed_factor = min(100, (speed / 60) * 100)
 mobility_score = int((vol_factor * 0.4) + (speed_factor * 0.6))
 
@@ -103,6 +117,16 @@ col1, col2 = st.columns([2,1])
 
 with col1:
     m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=14)
+    folium.Circle(
+        location=[st.session_state.lat, st.session_state.lon],
+        radius=10000,
+        color="#0ea5e9",
+        weight=2,
+        fill=True,
+        fill_color="#0ea5e9",
+        fill_opacity=0.05,
+        tooltip="10 km incident coverage area"
+    ).add_to(m)
     folium.CircleMarker(
         location=[st.session_state.lat, st.session_state.lon],
         radius=12, color="#0ea5e9", fill=True, fill_opacity=0.7
@@ -140,7 +164,7 @@ st.markdown('<div class="section">Traffic Intelligence</div>', unsafe_allow_html
 t1, t2, t3 = st.columns(3)
 t1.markdown(f'<div class="card"><div class="card-title">Congestion</div><div class="card-value">{level}</div></div>', unsafe_allow_html=True)
 t2.markdown(f'<div class="card"><div class="card-title">Avg. Area Speed</div><div class="card-value">{speed} km/h</div></div>', unsafe_allow_html=True)
-t3.markdown(f'<div class="card"><div class="card-title">Est. Volume</div><div class="card-value">{int(data.get("actual_volume",0))}</div></div>', unsafe_allow_html=True)
+t3.markdown(f'<div class="card"><div class="card-title">Estimated Volume</div><div class="card-value">{int(estimated_volume)}</div></div>', unsafe_allow_html=True)
 
 # ---------------- WEATHER CONDITIONS ----------------
 st.markdown('<div class="section">🌤️ Area Weather snapshot</div>', unsafe_allow_html=True)
@@ -157,12 +181,18 @@ for col, (title, val) in zip([w1,w2,w3,w4], weather_items):
 # Row 2 Weather
 st.write("")
 w5, w6, w7, w8 = st.columns(4)
+weather_live = weather.get("source") != "Fallback estimate"
+uv_index = weather.get("uv_index", "--") if weather_live else "--"
+uv_display = f"{uv_index} (night)" if uv_index == 0 and weather.get("is_day") == 0 else uv_index
+cloud_display = f"{weather.get('cloudcover', '--')}%" if weather_live else "--"
 adv_weather = [
-    ("☀️ UV Index", f"{weather.get('uv_index','--')}"),
-    ("☁️ Cloud", f"{weather.get('cloudcover','--')}%"),
+    ("☀️ UV Index", f"{uv_display}"),
+    ("☁️ Cloud", cloud_display),
     ("💨 Wind", f"{weather.get('windspeed','--')} km/h"),
     ("🌫️ Condition", "Clear" if weather.get('rain',0) == 0 else "Rainy")
 ]
+if not weather_live:
+    st.caption("Weather provider is unavailable; UV and cloud readings are hidden instead of shown as live values.")
 for col, (title, val) in zip([w5,w6,w7,w8], adv_weather):
     col.markdown(f'<div class="card"><div class="card-title">{title}</div><div class="card-value">{val}</div></div>', unsafe_allow_html=True)
 
@@ -174,7 +204,7 @@ with c_status:
     <div class="card" style="padding:15px;">
         <div class="card-title">Last Sync</div>
         <div class="card-value" style="font-size:18px;">{data.get('timestamp','--')}</div>
-        <div class="status-badge status-live">🟢 LIVE AREA FEED</div>
+        <div class="status-badge status-live">🟢 MODEL + TRAFFIC ESTIMATE</div>
     </div>
     """, unsafe_allow_html=True)
 

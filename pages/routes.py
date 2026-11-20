@@ -1,8 +1,9 @@
+
 import streamlit as st
 import requests
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime
+from html import escape
 
 BACKEND = "http://127.0.0.1:5000"
 
@@ -63,12 +64,6 @@ st.markdown("""
 .route3 { border-left: 5px solid #f59e0b; }
 .route4 { border-left: 5px solid #8b5cf6; }
 .route5 { border-left: 5px solid #ec4899; }
-.detail-label {
-    font-size: 12px;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-}
 .detail-value {
     font-size: 20px;
     font-weight: 700;
@@ -97,127 +92,246 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="page-title">Route Traffic Explorer</div>', unsafe_allow_html=True)
+
+def number(value, default=0):
+    """Safely convert API values into numbers."""
+    try:
+        result = float(value)
+        return result if result == result else default
+    except (TypeError, ValueError):
+        return default
+
+
+def congestion_level(value):
+    if value is None:
+        return "Unknown"
+    if value < 0.25:
+        return "Low"
+    if value < 0.50:
+        return "Medium"
+    return "High"
+
+
+st.markdown(
+    '<div class="page-title">Route Traffic Explorer</div>',
+    unsafe_allow_html=True
+)
 
 if "routes_data" not in st.session_state:
     st.session_state.routes_data = None
     st.session_state.route_query = None
 
 # ---------------- INPUT ----------------
-overview_html = """
+st.markdown("""
 <div class='card overview-card'>
     <h4>Route Overview</h4>
     <p>Compare travel alternatives before you head out. Enter source and destination to view route options, estimated arrival time, congestion levels, and travel suggestions.</p>
 </div>
-"""
-st.markdown(overview_html, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([2, 2, 1])
+
 with col1:
-    src = st.text_input("Source", placeholder="Mulund", value=st.session_state.get("route_src", ""))
+    src = st.text_input(
+        "Source",
+        placeholder="Mulund",
+        value=st.session_state.get("route_src", "")
+    )
+
 with col2:
-    dst = st.text_input("Destination", placeholder="Kurla", value=st.session_state.get("route_dst", ""))
+    dst = st.text_input(
+        "Destination",
+        placeholder="Kurla",
+        value=st.session_state.get("route_dst", "")
+    )
+
 with col3:
     if st.button("Show Route", key="show_route_top"):
-        if not src or not dst:
+        if not src.strip() or not dst.strip():
             st.warning("Please enter both source and destination.")
         else:
-            st.session_state.route_src = src
-            st.session_state.route_dst = dst
-            st.session_state.route_query = (src.strip().lower(), dst.strip().lower())
+            st.session_state.route_src = src.strip()
+            st.session_state.route_dst = dst.strip()
+            st.session_state.route_query = (
+                src.strip().lower(),
+                dst.strip().lower()
+            )
             st.session_state.routes_data = None
 
 # ---------------- FETCH ----------------
-if st.session_state.get("route_query"):
-    current_query = (src.strip().lower(), dst.strip().lower())
-    if current_query != st.session_state.route_query:
-        st.session_state.routes_data = None
-        st.session_state.route_query = current_query
-
-if st.session_state.routes_data is None and st.session_state.get("route_query"):
+# Results stay attached to the last submitted query while the user edits.
+if (
+    st.session_state.routes_data is None
+    and st.session_state.get("route_query")
+):
     try:
         response = requests.get(
             f"{BACKEND}/routes",
-            params={"src": src, "dst": dst},
-            timeout=15,
+            params={
+                "src": st.session_state.route_src,
+                "dst": st.session_state.route_dst
+            },
+            timeout=20
         )
-        if response.status_code == 200:
-            st.session_state.routes_data = response.json()
-        else:
-            st.error(f"Unable to fetch routes (status {response.status_code}).")
-    except Exception as exc:
+
+        response.raise_for_status()
+        st.session_state.routes_data = response.json()
+
+    except requests.RequestException as exc:
         st.error(f"Route lookup error: {exc}")
+        st.stop()
 
 if not st.session_state.routes_data:
-    st.info("Enter source and destination, then click Show Route to visualize alternative paths.")
+    st.info(
+        "Enter source and destination, then click Show Route "
+        "to visualize alternative paths."
+    )
     st.stop()
 
+# ---------------- ROUTE DATA ----------------
 data = st.session_state.routes_data
 routes = data.get("routes", [])
-source = data.get("source", {"name": src, "lat": 0, "lon": 0})
-dest = data.get("destination", {"name": dst, "lat": 0, "lon": 0})
 
-# ---------------- HIGHLIGHTS ----------------
-if routes:
-    fastest_route = min(routes, key=lambda r: r.get("time", float("inf")))
-    fastest_index = routes.index(fastest_route) + 1
-    cheapest_route = min(routes, key=lambda r: r.get("predicted_volume", float("inf")))
-    safest_route = min(routes, key=lambda r: r.get("actual_congestion", 1.0))
+source = data.get(
+    "source",
+    {"name": src, "lat": 0, "lon": 0}
+)
+dest = data.get(
+    "destination",
+    {"name": dst, "lat": 0, "lon": 0}
+)
 
-    suggestion_lines = []
-    if fastest_route.get("congestion", 0) >= 0.7:
-        suggestion_lines.append("The fastest route may still face heavy congestion, so allow extra time.")
-    if fastest_route.get("distance", 0) / 1000 > 20:
-        suggestion_lines.append("This is a longer trip; check fuel and rest stops before departure.")
-    if any(r.get("congestion", 0) > 0.7 for r in routes):
-        suggestion_lines.append("Peak traffic is likely on one or more route options. Consider leaving outside rush hour.")
-    if not suggestion_lines:
-        suggestion_lines.append("Route looks clear. Travel with normal precautions and keep traffic updates handy.")
-    travel_suggestion = " ".join(suggestion_lines)
+if not routes:
+    st.warning("No routes were returned by the backend.")
+    st.stop()
 
-    row1_col1, row1_col2 = st.columns(2)
-    row1_col1.markdown(f"""
-    <div class='card compact'>
-        <h4>Source</h4>
-        <p>{source.get('name', src)}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    row1_col2.markdown(f"""
-    <div class='card compact'>
-        <h4>Destination</h4>
-        <p>{dest.get('name', dst)}</p>
-    </div>
-    """, unsafe_allow_html=True)
+# ---------------- ROUTE SELECTION ----------------
+# Fastest = minimum travel time
+fastest_route = min(
+    routes,
+    key=lambda r: number(r.get("time"), float("inf"))
+)
 
-    row2_col1, row2_col2 = st.columns(2)
-    row2_col1.markdown(f"""
-    <div class='card compact'>
-        <h4>Fastest Route</h4>
-        <p class='detail-value'>{fastest_route.get('time', 0)/60:.0f} min</p>
-    </div>
-    """, unsafe_allow_html=True)
-    row2_col2.markdown(f"""
-    <div class='card compact'>
-        <h4>Lightest Traffic</h4>
-        <p class='detail-value'>{(1 - safest_route.get('actual_congestion', 0))*100:.0f}% free</p>
-    </div>
-    """, unsafe_allow_html=True)
+# Shortest = minimum distance
+shortest_route = min(
+    routes,
+    key=lambda r: number(r.get("distance"), float("inf"))
+)
+
+# Lightest traffic = minimum predicted congestion
+lightest_route = min(
+    routes,
+    key=lambda r: number(
+            r.get("route_congestion"), float("inf")
+    )
+)
+
+fastest_index = routes.index(fastest_route) + 1
+shortest_index = routes.index(shortest_route) + 1
+lightest_index = routes.index(lightest_route) + 1
+
+# ---------------- TRAVEL ADVICE ----------------
+fastest_congestion = fastest_route.get("route_congestion")
+fastest_congestion = (
+    number(fastest_congestion)
+    if fastest_congestion is not None else None
+)
+
+suggestion_lines = []
+
+if fastest_congestion is None:
+    suggestion_lines.append(
+        "Congestion information is unavailable. Check live traffic before departure."
+    )
+elif fastest_congestion >= 0.7:
+    suggestion_lines.append(
+        "The fastest route may face heavy congestion. Allow extra travel time."
+    )
+elif fastest_congestion >= 0.4:
+    suggestion_lines.append(
+        "Moderate congestion is predicted. Monitor traffic updates."
+    )
 else:
-    st.warning("No routes returned from the backend.")
+    suggestion_lines.append(
+        "The predicted congestion is low. Travel with normal precautions."
+    )
 
-# ---------------- MAP + ROUTE LIST ----------------
+if number(fastest_route.get("distance")) / 1000 > 20:
+    suggestion_lines.append(
+        "This is a longer trip; plan your journey accordingly."
+    )
+
+travel_suggestion = " ".join(suggestion_lines)
+
+# ---------------- ROUTE OVERVIEW ----------------
+row1_col1, row1_col2 = st.columns(2)
+
+row1_col1.markdown(f"""
+<div class='card compact'>
+    <h4>Source</h4>
+    <p>{escape(str(source.get('name', src)))}</p>
+</div>
+""", unsafe_allow_html=True)
+
+row1_col2.markdown(f"""
+<div class='card compact'>
+    <h4>Destination</h4>
+    <p>{escape(str(dest.get('name', dst)))}</p>
+</div>
+""", unsafe_allow_html=True)
+
+row2_col1, row2_col2 = st.columns(2)
+
+row2_col1.markdown(f"""
+<div class='card compact'>
+    <h4>Fastest Route</h4>
+    <p class='detail-value'>{number(fastest_route.get('time')) / 60:.0f} min</p>
+</div>
+""", unsafe_allow_html=True)
+
+lightest_congestion = lightest_route.get("route_congestion")
+
+if lightest_congestion is None:
+    lightest_text = "Unavailable"
+else:
+    lightest_text = (
+        f"{(1 - number(lightest_congestion)) * 100:.0f}% free"
+    )
+
+row2_col2.markdown(f"""
+<div class='card compact'>
+    <h4>Lightest Traffic</h4>
+    <p class='detail-value'>{lightest_text}</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------- MAP ----------------
 map_col, info_col = st.columns([2.2, 1])
 
 with map_col:
-    center_lat = (source.get("lat", 0) + dest.get("lat", 0)) / 2
-    center_lon = (source.get("lon", 0) + dest.get("lon", 0)) / 2
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12)
+    center_lat = (
+        number(source.get("lat")) + number(dest.get("lat"))
+    ) / 2
 
-    colors = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#ec4899"]
+    center_lon = (
+        number(source.get("lon")) + number(dest.get("lon"))
+    ) / 2
+
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=12
+    )
+
+    colors = [
+        "#22c55e", "#3b82f6", "#f59e0b",
+        "#8b5cf6", "#ec4899"
+    ]
+
     bounds = []
 
     for idx, route in enumerate(routes):
         points = route.get("points", [])
+
         if not points or len(points) < 2:
             continue
 
@@ -225,48 +339,51 @@ with map_col:
             points = points[::4]
 
         bounds.extend(points)
-        predicted_congestion = route.get("predicted_congestion", 0)
-        actual_congestion = route.get("actual_congestion", 0)
 
-        level = "Unknown"
-        if actual_congestion is not None:
-            if actual_congestion < 0.25:
-                level = "Low"
-            elif actual_congestion < 0.5:
-                level = "Medium"
-            else:
-                level = "High"
+        predicted_congestion = route.get("route_congestion")
+        predicted_congestion = (
+            number(predicted_congestion)
+            if predicted_congestion is not None else None
+        )
 
-        route_color = colors[idx % len(colors)]
+        level = congestion_level(predicted_congestion)
+
+        distance = number(route.get("distance")) / 1000
+        duration = number(route.get("time")) / 60
+        volume = number(route.get("predicted_volume"))
+
+        congestion_text = (
+            f"{predicted_congestion:.2f}"
+            if predicted_congestion is not None
+            else "Unavailable"
+        )
+
         tooltip = (
-            f"Route {idx+1}\n"
-            f"Traffic: {level}\n"
-            f"Distance: {route.get('distance', 0)/1000:.1f} km\n"
-            f"Time: {route.get('time', 0)/60:.0f} min\n"
-            f"Predicted Volume: {int(route.get('predicted_volume', 0))}\n"
-            f"Predicted Congestion: {predicted_congestion:.2f}\n"
-            f"Actual Congestion: {actual_congestion:.2f}\n"
-            f"Speed: {route.get('speed', '--')}"
+            f"Route {idx + 1} | {level} | "
+            f"Distance: {distance:.2f} km | "
+            f"Time: {duration:.1f} min | "
+            f"Predicted Volume: {volume:.0f} | "
+            f"Predicted Congestion: {congestion_text}"
         )
 
         folium.PolyLine(
             locations=points,
-            color=route_color,
+            color=colors[idx % len(colors)],
             weight=6,
             opacity=0.9,
-            tooltip=tooltip,
+            tooltip=tooltip
         ).add_to(m)
 
     folium.Marker(
-        [source.get("lat", 0), source.get("lon", 0)],
+        [number(source.get("lat")), number(source.get("lon"))],
         tooltip=f"Source: {source.get('name', src)}",
-        icon=folium.Icon(color="green", icon="play"),
+        icon=folium.Icon(color="green", icon="play")
     ).add_to(m)
 
     folium.Marker(
-        [dest.get("lat", 0), dest.get("lon", 0)],
+        [number(dest.get("lat")), number(dest.get("lon"))],
         tooltip=f"Destination: {dest.get('name', dst)}",
-        icon=folium.Icon(color="red", icon="stop"),
+        icon=folium.Icon(color="red", icon="stop")
     ).add_to(m)
 
     if bounds:
@@ -274,80 +391,109 @@ with map_col:
 
     st_folium(m, height=560, use_container_width=True)
 
+    # ---------------- ROUTE CARDS ----------------
     st.markdown("### Routes found")
-    max_columns = min(4, len(routes))
-    for row_start in range(0, len(routes), max_columns):
-        row_routes = routes[row_start:row_start + max_columns]
+
+    colors_count = min(4, len(routes))
+
+    for row_start in range(0, len(routes), colors_count):
+        row_routes = routes[row_start:row_start + colors_count]
         cols = st.columns(len(row_routes))
-        for local_idx, (col, route) in enumerate(zip(cols, row_routes)):
+
+        for local_idx, (col, route) in enumerate(
+            zip(cols, row_routes)
+        ):
             route_idx = row_start + local_idx
-            distance = route.get('distance', 0) / 1000
-            duration = route.get('time', 0) / 60
-            volume = route.get('predicted_volume', 0)
-            predicted_congestion = route.get('predicted_congestion', 0)
-            actual_congestion = route.get('actual_congestion', 0)
 
-            # Determine congestion level based on actual congestion
-            if actual_congestion is None:
-                level = 'Unknown'
-            elif actual_congestion < 0.25:
-                level = 'Low'
-            elif actual_congestion < 0.5:
-                level = 'Medium'
-            else:
-                level = 'High'
+            distance = number(route.get("distance")) / 1000
+            duration = number(route.get("time")) / 60
+            volume = number(route.get("predicted_volume"))
 
-            # Calculate model accuracy indicator
-            accuracy_diff = abs(predicted_congestion - actual_congestion)
-            if accuracy_diff < 0.1:
-                accuracy = "Accurate"
-            elif accuracy_diff < 0.3:
-                accuracy = "Moderate"
-            else:
-                accuracy = "Inaccurate"
+            predicted_congestion = route.get("route_congestion")
+
+            if predicted_congestion is not None:
+                predicted_congestion = number(
+                    predicted_congestion
+                )
+
+            level = congestion_level(predicted_congestion)
+
+            congestion_display = (
+                f"{predicted_congestion:.2f}"
+                if predicted_congestion is not None
+                else "Unavailable"
+            )
+
+            route_type = escape(str(route.get("type", "Route")))
 
             col.markdown(f"""
             <div class="card route{(route_idx % 5) + 1}">
-                <div class="route-badge">Route {route_idx+1} • {route.get('type', 'Route')}</div>
+                <div class="route-badge">
+                    Route {route_idx + 1} • {route_type}
+                </div>
                 <p><strong>Traffic:</strong> {level}</p>
                 <p><strong>Distance:</strong> {distance:.2f} km</p>
                 <p><strong>Duration:</strong> {duration:.1f} min</p>
-                <p><strong>Predicted Volume:</strong> {int(volume)}</p>
-                <p><strong>Predicted Congestion:</strong> {predicted_congestion:.2f}</p>
-                <p><strong>Actual Congestion:</strong> {actual_congestion:.2f}</p>
-                <p><strong>Model Accuracy:</strong> {accuracy}</p>
+                <p><strong>Predicted Volume:</strong> {volume:.0f}</p>
+                <p><strong>Predicted Congestion:</strong> {congestion_display}</p>
             </div>
             """, unsafe_allow_html=True)
 
+# ---------------- ROUTE INFORMATION ----------------
 with info_col:
+
     st.markdown(f"""
     <div class='card'>
         <h4>Fastest Arrival</h4>
-        <p class='detail-value'>{fastest_route.get('time', 0)/60:.0f} min</p>
-        <p>{fastest_route.get('distance', 0)/1000:.1f} km via the quickest route.</p>
+        <p class='detail-value'>
+            {number(fastest_route.get('time')) / 60:.0f} min
+        </p>
+        <p>
+            {number(fastest_route.get('distance')) / 1000:.1f} km
+            via Route {fastest_index}.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    chosen_reason = "This route is chosen because it offers the shortest estimated travel time among all alternatives."
-    if fastest_route.get('actual_congestion', 0) >= 0.7:
-        chosen_reason = "It is still the quickest but may face heavy traffic, so expect some delay and consider leaving outside peak hours."
-    elif fastest_route.get('actual_congestion', 0) >= 0.4:
-        chosen_reason = "Fast and relatively steady traffic, but monitor congestion updates to avoid slowdowns."
+    shortest_congestion = shortest_route.get(
+        "predicted_congestion"
+    )
 
-    predicted_congestion = fastest_route.get('predicted_congestion', 0)
-    actual_congestion = fastest_route.get('actual_congestion', 0)
-    accuracy_diff = abs(predicted_congestion - actual_congestion)
-    model_accuracy = "Accurate" if accuracy_diff < 0.1 else "Moderate" if accuracy_diff < 0.3 else "Inaccurate"
+    shortest_congestion_text = (
+        f"{number(shortest_congestion):.2f}"
+        if shortest_congestion is not None
+        else "Unavailable"
+    )
 
     st.markdown(f"""
     <div class='card'>
         <h4>Shortest Route</h4>
-        <p class='detail-value'>Route {fastest_index} • {fastest_route.get('type', 'Fastest')}</p>
-        <p>{fastest_route.get('distance', 0)/1000:.1f} km, {fastest_route.get('time', 0)/60:.0f} min</p>
-        <p><strong>Predicted Congestion:</strong> {predicted_congestion:.2f}</p>
-        <p><strong>Actual Congestion:</strong> {actual_congestion:.2f}</p>
-        <p><strong>Model Accuracy:</strong> {model_accuracy}</p>
-        <p>{chosen_reason}</p>
+        <p class='detail-value'>
+            Route {shortest_index} •
+            {escape(str(shortest_route.get('type', 'Route')))}
+        </p>
+        <p>
+            {number(shortest_route.get('distance')) / 1000:.2f} km,
+            {number(shortest_route.get('time')) / 60:.1f} min
+        </p>
+        <p>
+            <strong>Predicted Congestion:</strong>
+            {shortest_congestion_text}
+        </p>
+        <p>This route is selected because it has the
+        shortest estimated distance.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class='card'>
+        <h4>Lightest Traffic</h4>
+        <p class='detail-value'>Route {lightest_index}</p>
+        <p>
+            {number(lightest_route.get('distance')) / 1000:.2f} km,
+            {number(lightest_route.get('time')) / 60:.1f} min
+        </p>
+        <p>{lightest_text} according to predicted congestion.</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -357,3 +503,7 @@ with info_col:
         <p>{travel_suggestion}</p>
     </div>
     """, unsafe_allow_html=True)
+
+st.caption(
+    "© 2026 TransitIQ | Smart Traffic Congestion Prediction System | MCA Group B2511"
+)
