@@ -1,133 +1,99 @@
-🚦 TransitIQ: Smart Traffic Congestion Prediction System
+# TransitIQ: Smart Traffic Congestion Prediction
 
-📌 Overview
+TransitIQ is a Streamlit dashboard with a Flask API. It combines a traffic-volume model trained on the Metro Interstate Traffic Volume dataset with current weather and TomTom traffic services. The project is a prototype: its model is trained on Minnesota data, so its volume predictions are not validated Mumbai vehicle counts.
 
-TransitIQ is a real-time traffic congestion prediction system that combines machine learning, weather data, and live traffic APIs to estimate traffic conditions across Mumbai. The system provides users with interactive maps, traffic insights, weather conditions, and future predictions.
+## Features
 
-🎯 Objectives
-- Predict traffic congestion using ML models
-- Integrate real-time weather data
-- Visualize traffic conditions on maps
-- Provide route-based traffic insights
-- Display live incidents and congestion levels
+- Home dashboard with selected location, weather and traffic estimates.
+- Twelve-hour weather-informed traffic forecast.
+- Analysis page with recent backend estimates and a clearly labeled reference dataset fallback.
+- Route alternatives with TomTom route geometry and sampled live traffic flow.
+- Nearby incidents from TomTom Traffic Incidents API, with short-lived cached results when connectivity drops.
+- Model training and comparison notebook at `notebooks/TransitIQ_Model_Analysis.ipynb`.
 
-⚙️ Tech Stack
-Frontend
-- Streamlit
-- Folium (Maps)
-- Plotly (Visualization)
-Backend
-- Flask API
-- Machine Learning
-- Random Forest Regressor (Scikit-learn)
-APIs Used
-- Open-Meteo (Weather Data)
-- TomTom API (Traffic & Incidents)
-- OSRM API (Routing)
+## Setup
 
-🧠 Features
-🏠 Home Dashboard
-- Live traffic prediction (Low / Medium / High)
-- Weather details (Temperature, Humidity, Wind, UV Index)
-- Interactive map (location selection)
-- Traffic volume estimation
+Use Python 3.11 or newer. From this folder:
 
-📊 Analysis Page
-- Real-time prediction vs actual graph
-- Traffic trend visualization
-- Model performance (R² score)
-- Traffic intensity gauge
-
-🛣 Routes Page
-- Route visualization between locations
-- Traffic-based route coloring
-- Nearby route insights
-
-🚨 Incidents Page
-- Real-time traffic incidents
-- Delay and severity information
-
-🔍 How It Works
-1. User selects a location (map or search)
-2. Backend fetches:
-    - Weather data (Open-Meteo)
-    - Traffic data (TomTom)
-3. Features are generated (time + weather)
-4. ML model predicts traffic volume
-5. Result is displayed on dashboard
-
-📊 Machine Learning Model
-- Algorithm: Random Forest Regressor
-- Dataset: Metro Interstate Traffic Volume Dataset + Weather Data
-- Features:
-  - Hour, Day, Month
-  - Temperature, Humidity, Wind
-  - Cloud Cover, Rain
-- Output:
-  - Traffic Volume
-  - Congestion Level (Low / Medium / High)
-
-🚀 Installation & Setup
-1️⃣ Clone the repository
 ```bash
-git clone https://github.com/Tanvi2k25/TransitIQ-Smart-Traffic-Congestion-Prediction.git
-cd project
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env  # PowerShell; on macOS/Linux use: cp .env.example .env
 ```
-2️⃣ Install dependencies
-```bash
-pip install -r requirements.txt
+
+Add your TomTom developer key to `.env`:
+
+```text
+TOMTOM_API_KEY=your_key_here
 ```
-3️⃣ Run Backend (Flask)
+
+Never commit `.env`. Without the key, model predictions and reference-data analysis still work with fallback values; live routing and incidents are unavailable.
+
+## Run
+
+Open two terminals in the project folder:
+
 ```bash
-cd api
-python server.py
+python api/server.py
 ```
-4️⃣ Run Frontend (Streamlit)
+
 ```bash
-cd ..
 streamlit run app.py
 ```
-📍 Usage
-- Search or select a location on the map
-- View real-time traffic and weather
-- Analyze trends in the analysis page
-- Check routes and incidents
 
-⚠️ Limitations
-- Real-time traffic depends on API availability
-- Weather API has limited free data fields
-- Model trained on non-Mumbai dataset (adapted)
+The Flask health endpoint is `http://127.0.0.1:5000/`. The Streamlit app is shown in the URL printed by Streamlit. If `model/model.pkl` is missing, the backend trains it at startup; install all requirements and keep the dataset at `data/Metro_Interstate_Traffic_Volume.csv`.
 
+## Low connectivity behavior
 
+The API uses bounded request timeouts. Weather is cached in memory for five minutes, and recent incident results are cached for one minute. If a provider is unavailable, prediction uses documented fallback weather and traffic estimates; the UI labels live, cached and unavailable incident data. Forecasting needs a weather response and can be unavailable offline. Map tiles also require a network connection. The app itself and the trained model run locally.
+
+## Model and evaluation
+
+Run `python train_model.py` to clean the reference dataset, prepare features, train Linear Regression, Decision Tree, Random Forest, Gradient Boosting and XGBoost, and save the best model plus comparison artifacts under `model/`. The chronological 80/20 split places later records in the test set. See the notebook for cleaning, exploratory plots, metric comparisons, actual-versus-predicted plots and feature importance.
+
+### What to tell the examiner
+
+The available labeled dataset is the Metro Interstate Traffic Volume dataset, collected in Minnesota, not Mumbai. It was used because the project had no reliable, labeled Mumbai vehicle-count history for supervised training. The model demonstrates the end-to-end pipeline and learns general time and weather patterns, but its volume estimates must be described as reference-model estimates, not Mumbai ground truth. TomTom supplies current flow and incident information separately. A proper Mumbai model would require collecting and validating local traffic counts over time, retraining on those labels, and evaluating on a later Mumbai holdout period.
+
+Random Forest was included because it can model nonlinear relationships and interactions among time and weather features without requiring feature scaling, and it is relatively robust to noisy tabular data. It was compared with four alternatives using MAE, RMSE and R² on a chronological holdout; the training script selects the highest-R² model for the API. Explain that this is a practical baseline choice, not proof that Random Forest is universally best. Refer to the actual `model/model_comparison.csv` results when presenting which model won in your run.
+
+## Limitations
+
+- TomTom and Open-Meteo availability, plan limits and coverage determine live data.
+- Fallback weather and traffic values are estimates; they are not observations.
+- The training dataset is geographically different from Mumbai and model validation does not establish Mumbai accuracy.
+- Incident and weather caches are in memory and clear when the backend restarts.
 Mobile app integration
 Real-time crowd-sourced traffic data
 
-## 🔮 Future Enhancements
+## Future Enhancements
 
-- 📱 Mobile Application:
+- Mobile Application:
   Develop an Android application for
   accessing traffic predictions on the go.
 
-- 👥 Crowd-Sourced Traffic:
+- Crowd-Sourced Traffic:
   Collect real-time traffic information
   from users to improve prediction quality.
 
-- 🤖 Advanced ML Models:
+- Advanced ML Models:
   Experiment with XGBoost, LSTM and
   other time-series prediction models.
 
-- 📍 Smart Route Recommendation:
+- Smart Route Recommendation:
   Recommend alternative routes based on
   predicted congestion and travel time.
 
-- 🚨 Smart Notifications:
+- Smart Notifications:
   Send alerts about traffic jams,
   road closures and unexpected incidents.
 
-- 📊 Historical Traffic Analysis:
+- Historical Traffic Analysis:
   Store historical traffic data to
   identify congestion patterns.
 
-- 🌧️ Weather-Based Prediction:
+- Weather-Based Prediction:
   Improve prediction using rainfall,
   visibility and other weather conditions.
