@@ -65,3 +65,35 @@ Random Forest was included because it can model nonlinear relationships and inte
 - Fallback weather and traffic values are estimates; they are not observations.
 - The training dataset is geographically different from Mumbai and model validation does not establish Mumbai accuracy.
 - Incident and weather caches are in memory and clear when the backend restarts.
+Mobile app integration
+Real-time crowd-sourced traffic data
+
+## Future Enhancements
+
+- Mobile Application:
+  Develop an Android application for
+  accessing traffic predictions on the go.
+
+- Crowd-Sourced Traffic:
+  Collect real-time traffic information
+  from users to improve prediction quality.
+
+- Advanced ML Models:
+  Experiment with XGBoost, LSTM and
+  other time-series prediction models.
+
+- Smart Route Recommendation:
+  Recommend alternative routes based on
+  predicted congestion and travel time.
+
+- Smart Notifications:
+  Send alerts about traffic jams,
+  road closures and unexpected incidents.
+
+- Historical Traffic Analysis:
+  Store historical traffic data to
+  identify congestion patterns.
+
+- Weather-Based Prediction:
+  Improve prediction using rainfall,
+  visibility and other weather conditions.
