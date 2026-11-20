@@ -53,20 +53,14 @@ The API uses bounded request timeouts. Weather is cached in memory for five minu
 
 Run `python train_model.py` to clean the reference dataset, prepare features, train Linear Regression, Decision Tree, Random Forest, Gradient Boosting and XGBoost, and save the best model plus comparison artifacts under `model/`. The chronological 80/20 split places later records in the test set. See the notebook for cleaning, exploratory plots, metric comparisons, actual-versus-predicted plots and feature importance.
 
-### What to tell the examiner
-
-The available labeled dataset is the Metro Interstate Traffic Volume dataset, collected in Minnesota, not Mumbai. It was used because the project had no reliable, labeled Mumbai vehicle-count history for supervised training. The model demonstrates the end-to-end pipeline and learns general time and weather patterns, but its volume estimates must be described as reference-model estimates, not Mumbai ground truth. TomTom supplies current flow and incident information separately. A proper Mumbai model would require collecting and validating local traffic counts over time, retraining on those labels, and evaluating on a later Mumbai holdout period.
-
-Random Forest was included because it can model nonlinear relationships and interactions among time and weather features without requiring feature scaling, and it is relatively robust to noisy tabular data. It was compared with four alternatives using MAE, RMSE and R² on a chronological holdout; the training script selects the highest-R² model for the API. Explain that this is a practical baseline choice, not proof that Random Forest is universally best. Refer to the actual `model/model_comparison.csv` results when presenting which model won in your run.
-
 ## Limitations
 
 - TomTom and Open-Meteo availability, plan limits and coverage determine live data.
 - Fallback weather and traffic values are estimates; they are not observations.
 - The training dataset is geographically different from Mumbai and model validation does not establish Mumbai accuracy.
 - Incident and weather caches are in memory and clear when the backend restarts.
-Mobile app integration
-Real-time crowd-sourced traffic data
+- Mobile app integration
+- Real-time crowd-sourced traffic data
 
 ## Future Enhancements
 
